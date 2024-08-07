@@ -4,14 +4,6 @@
 
 #include <cstddef>
 #include <vector>
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/system/error_code.hpp>
-#include <iostream>
-#include <istream>
-#include <ostream>
-#include <string>
-
 
 using namespace std;
 using namespace boost::asio;
@@ -25,35 +17,33 @@ BoostHttpOnlySslClient::BoostHttpOnlySslClient() : _httpParser() {
 BoostHttpOnlySslClient::~BoostHttpOnlySslClient() {
 }
 
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/system/error_code.hpp>
-#include <iostream>
-#include <istream>
-#include <ostream>
-#include <string>
-
-using tcp = boost::asio::ip::tcp;
-namespace ssl = boost::asio::ssl;
-
 string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqArg>& args) const {
     tcp::resolver resolver(_ioService);
-    tcp::resolver::query query(url.host, "8081"); // Use port 8081 for HTTP, local server
+    tcp::resolver::query query(url.host, "443");
 
-    tcp::socket socket(_ioService);
+    ssl::context context(ssl::context::tlsv12_client);
+    context.set_default_verify_paths();
 
-    connect(socket, resolver.resolve(query));
-    socket.set_option(tcp::no_delay(true));
+    ssl::stream<tcp::socket> socket(_ioService, context);
 
+    connect(socket.lowest_layer(), resolver.resolve(query));
+
+    #ifdef TGBOT_DISABLE_NAGLES_ALGORITHM
+    socket.lowest_layer().set_option(tcp::no_delay(true));
+    #endif //TGBOT_DISABLE_NAGLES_ALGORITHM
     #ifdef TGBOT_CHANGE_SOCKET_BUFFER_SIZE
     #if _WIN64 || __amd64__ || __x86_64__ || __MINGW64__ || __aarch64__ || __powerpc64__
-    socket.set_option(socket_base::send_buffer_size(65536));
-    socket.set_option(socket_base::receive_buffer_size(65536));
+    socket.lowest_layer().set_option(socket_base::send_buffer_size(65536));
+    socket.lowest_layer().set_option(socket_base::receive_buffer_size(65536));
     #else //for 32-bit
-    socket.set_option(socket_base::send_buffer_size(32768));
-    socket.set_option(socket_base::receive_buffer_size(32768));
+    socket.lowest_layer().set_option(socket_base::send_buffer_size(32768));
+    socket.lowest_layer().set_option(socket_base::receive_buffer_size(32768));
     #endif //Processor architecture
     #endif //TGBOT_CHANGE_SOCKET_BUFFER_SIZE
+    socket.set_verify_mode(ssl::verify_none);
+    socket.set_verify_callback(ssl::rfc2818_verification(url.host));
+
+    socket.handshake(ssl::stream<tcp::socket>::client);
 
     string requestText = _httpParser.generateRequest(url, args, false);
     write(socket, buffer(requestText.c_str(), requestText.length()));
@@ -66,82 +56,43 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     timeStruct.tv_usec = 0;
     FD_ZERO(&fileDescriptorSet);
     
-    int nativeSocket = static_cast<int>(socket.native_handle());
+    // We'll need to get the underlying native socket for this select call, in order
+    // to add a simple timeout on the read:
     
-    FD_SET(nativeSocket, &fileDescriptorSet);        
-    select(nativeSocket + 1, &fileDescriptorSet, NULL, NULL, &timeStruct);
+    int nativeSocket = static_cast<int>(socket.lowest_layer().native_handle());
     
-    if (!FD_ISSET(nativeSocket, &fileDescriptorSet)) { // timeout
+    FD_SET(nativeSocket,&fileDescriptorSet);        
+    select(nativeSocket+1,&fileDescriptorSet,NULL,NULL,&timeStruct);
+    
+    if(!FD_ISSET(nativeSocket,&fileDescriptorSet)){ // timeout
+        
         std::string sMsg("TIMEOUT on read client data. Client IP: ");
-        sMsg.append(socket.remote_endpoint().address().to_string());
+        
+        sMsg.append(socket.next_layer().remote_endpoint().address().to_string());
         _ioService.reset();
         
         throw std::exception();
-    }
-
-    // Read the response
-    boost::asio::streambuf responseBuffer;
-    std::ostringstream responseStream;
-    boost::system::error_code error;
-
-    // Read until the end of the HTTP headers
-    std::cout << "Reading response headers" << std::endl;
-    boost::asio::read_until(socket, responseBuffer, "\r\n\r\n", error);
-    if (error && error != boost::asio::error::eof) {
-        throw boost::system::system_error(error); // Some other error
-    }
-    std::cout << "Reading response headers done: " << responseBuffer.size() << std::endl;
-
-    // Extract the headers
-    std::istream responseStreambuf(&responseBuffer);
-    string header;
-    size_t contentLength = 0;
-    std::cout << "Extracting headers" << std::endl;
-    while (std::getline(responseStreambuf, header) && header != "\r") {
-        responseStream << header << "\n";
-        if (header.find("Content-Length:") != std::string::npos) {
-            contentLength = std::stoul(header.substr(header.find(":") + 1));
-        }
-    }
-    std::cout << "Extracting headers done" << std::endl;
-    responseStream << "\r\n";
-    std::cout << "Response headers: " << responseStream.str() << std::endl;
-    std::cout << "Response headers size: " << responseStream.str().size() << std::endl;
-
-    uint64_t alreadyReceivedSize = responseBuffer.size();
-    uint64_t missingLength = alreadyReceivedSize - contentLength;
+    }      
     
-    responseStream << &responseBuffer;
-    responseBuffer.consume(alreadyReceivedSize);
+    string response;
 
-    // Read the remaining part of the response based on Content-Length
-    std::cout << "Reading response body" << std::endl;
-    if (contentLength > 0) {
-        while (missingLength > 0) {
-            std::cout << "Reading response body with missing length: " << missingLength << std::endl;
-            auto bytesReaded = boost::asio::read(socket, responseBuffer, error);
-            missingLength -= bytesReaded;
-            std::cout << "Reading response body with content length done" << std::endl;
-            if (error == boost::asio::error::eof)
-                break; // Connection closed cleanly by peer.
-            else if (error)
-                break; // Some other error.
-        }
-    } else {
-        std::cout << "Reading response body with unknown content length" << std::endl;
-        while (boost::asio::read(socket, responseBuffer, boost::asio::transfer_at_least(1), error)) {
-            std::cout << "Reading response body with unknown content length done" << std::endl;
-            if (error == boost::asio::error::eof)
-                break; // Connection closed cleanly by peer.
-            else if (error)
-                break; // Some other error.
-        }
+    #ifdef TGBOT_CHANGE_READ_BUFFER_SIZE
+    #if _WIN64 || __amd64__ || __x86_64__ || __MINGW64__ || __aarch64__ || __powerpc64__
+    char buff[65536];
+    #else //for 32-bit
+    char buff[32768];
+    #endif //Processor architecture
+    #else
+    char buff[1024];
+    #endif //TGBOT_CHANGE_READ_BUFFER_SIZE
+
+    boost::system::error_code error;
+    while (!error) {
+        std::size_t bytes = read(socket, buffer(buff), error);
+        response += string(buff, bytes);
     }
 
-    // Append the body to the response
-    responseStream << &responseBuffer;
-
-    return _httpParser.extractBody(responseStream.str());
+    return _httpParser.extractBody(response);
 }
 
 }
