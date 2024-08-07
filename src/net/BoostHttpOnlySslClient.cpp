@@ -87,28 +87,37 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     boost::system::error_code error;
 
     // Read until the end of the HTTP headers
+    std::cout << "Reading response headers" << std::endl;
     boost::asio::read_until(socket, responseBuffer, "\r\n\r\n", error);
     if (error && error != boost::asio::error::eof) {
         throw boost::system::system_error(error); // Some other error
     }
+    std::cout << "Reading response headers done" << std::endl;
 
     // Extract the headers
     std::istream responseStreambuf(&responseBuffer);
     string header;
     size_t contentLength = 0;
+    std::cout << "Extracting headers" << std::endl;
     while (std::getline(responseStreambuf, header) && header != "\r") {
         responseStream << header << "\n";
         if (header.find("Content-Length:") != std::string::npos) {
             contentLength = std::stoul(header.substr(header.find(":") + 1));
         }
     }
+    std::cout << "Extracting headers done" << std::endl;
     responseStream << "\r\n";
 
     // Read the remaining part of the response based on Content-Length
+    std::cout << "Reading response body" << std::endl;
     if (contentLength > 0) {
+        std::cout << "Reading response body with content length: " << contentLength << std::endl;
         boost::asio::read(socket, responseBuffer, boost::asio::transfer_exactly(contentLength), error);
+        std::cout << "Reading response body done" << std::endl;
     } else {
+        std::cout << "Reading response body with unknown content length" << std::endl;
         while (boost::asio::read(socket, responseBuffer, boost::asio::transfer_at_least(1), error)) {
+            std::cout << "Reading response body with unknown content length done" << std::endl;
             if (error == boost::asio::error::eof)
                 break; // Connection closed cleanly by peer.
             else if (error)
