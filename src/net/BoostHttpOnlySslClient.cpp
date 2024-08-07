@@ -90,7 +90,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     if (error && error != boost::asio::error::eof) {
         throw boost::system::system_error(error); // Some other error
     }
-    std::cout << "Reading response headers done" << std::endl;
+    std::cout << "Reading response headers done: " << responseBuffer.size() << std::endl;
 
     // Extract the headers
     std::istream responseStreambuf(&responseBuffer);
