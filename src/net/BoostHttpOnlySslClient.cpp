@@ -43,10 +43,8 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     tcp::socket socket(_ioService);
 
     connect(socket, resolver.resolve(query));
-
-    #ifdef TGBOT_DISABLE_NAGLES_ALGORITHM
     socket.set_option(tcp::no_delay(true));
-    #endif //TGBOT_DISABLE_NAGLES_ALGORITHM
+    
     #ifdef TGBOT_CHANGE_SOCKET_BUFFER_SIZE
     #if _WIN64 || __amd64__ || __x86_64__ || __MINGW64__ || __aarch64__ || __powerpc64__
     socket.set_option(socket_base::send_buffer_size(65536));
