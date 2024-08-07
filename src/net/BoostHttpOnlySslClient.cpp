@@ -82,7 +82,6 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     // Read the response
     boost::asio::streambuf responseBuffer;
     std::ostringstream responseStream;
-    std::ostringstream headerStream;
     boost::system::error_code error;
 
     // Read until the end of the HTTP headers
@@ -91,9 +90,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     if (error && error != boost::asio::error::eof) {
         throw boost::system::system_error(error); // Some other error
     }
-    uint64_t alreadyReceivedSize = responseBuffer.size();
-    std::cout << "Reading response headers done: " << alreadyReceivedSize << std::endl;
-    responseStream << &responseBuffer;
+    std::cout << "Reading response headers done: " << responseBuffer.size() << std::endl;
 
     // Extract the headers
     std::istream responseStreambuf(&responseBuffer);
@@ -101,22 +98,24 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     size_t contentLength = 0;
     std::cout << "Extracting headers" << std::endl;
     while (std::getline(responseStreambuf, header) && header != "\r") {
-        headerStream << header << "\n";
+        responseStream << header << "\n";
         if (header.find("Content-Length:") != std::string::npos) {
             contentLength = std::stoul(header.substr(header.find(":") + 1));
         }
     }
     std::cout << "Extracting headers done" << std::endl;
-    headerStream << "\r\n";
-    std::cout << "Response headers: " << headerStream.str() << std::endl;
-    std::cout << "Response headers size: " << headerStream.str().size() << std::endl;
+    responseStream << "\r\n";
+    std::cout << "Response headers: " << responseStream.str() << std::endl;
+    std::cout << "Response headers size: " << responseStream.str().size() << std::endl;
 
-    uint64_t missingLength = (alreadyReceivedSize - headerStream.str().size()) - contentLength;
+    uint64_t alreadyReceivedSize = responseBuffer.size();
+    uint64_t missingLength = (responseBuffer.size() - responseStream.str().size()) - contentLength;
 
     std::cout << "Already received size: " << alreadyReceivedSize << std::endl;
-    std::cout << "Missing length: " << missingLength << std::endl;
 
-    responseBuffer.consume(responseBuffer.size());
+    responseStream.clear();
+    responseStream << &responseBuffer;
+    responseBuffer.consume(alreadyReceivedSize);
 
     // Read the remaining part of the response based on Content-Length
     std::cout << "Reading response body" << std::endl;
