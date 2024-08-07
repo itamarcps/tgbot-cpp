@@ -107,6 +107,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     }
     std::cout << "Extracting headers done" << std::endl;
     responseStream << "\r\n";
+    std::cout << "Response headers: " << responseStream.str() << std::endl;
 
     // Read the remaining part of the response based on Content-Length
     std::cout << "Reading response body" << std::endl;
