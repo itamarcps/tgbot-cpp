@@ -43,7 +43,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
         tcp::socket socket(ioc);
 
         // Look up the domain name
-        auto const results = resolver.resolve(url.host, "80");
+        auto const results = resolver.resolve(url.host, "8081");
 
         // Make the connection on the IP address we get from a lookup
         boost::asio::connect(socket, results.begin(), results.end());
