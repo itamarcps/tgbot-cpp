@@ -112,9 +112,12 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     // Read the remaining part of the response based on Content-Length
     std::cout << "Reading response body" << std::endl;
     if (contentLength > 0) {
-        std::cout << "Reading response body with content length: " << contentLength << std::endl;
-        boost::asio::read(socket, responseBuffer, boost::asio::transfer_exactly(contentLength), error);
-        std::cout << "Reading response body done" << std::endl;
+        while (contentLength > 0) {
+            std::cout << "Reading response body with content length: " << contentLength << std::endl;
+            auto bytesReaded = boost::asio::read(socket, responseBuffer, error);
+            contentLength -= bytesReaded;
+            std::cout << "Reading response body with content length done" << std::endl;
+        }
     } else {
         std::cout << "Reading response body with unknown content length" << std::endl;
         while (boost::asio::read(socket, responseBuffer, boost::asio::transfer_at_least(1), error)) {
