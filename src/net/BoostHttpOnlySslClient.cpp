@@ -108,13 +108,20 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     std::cout << "Response headers: " << responseStream.str() << std::endl;
     std::cout << "Response headers size: " << responseStream.str().size() << std::endl;
 
+    uint64_t alreadyReceivedSize = responseBuffer.size();
+    uint64_t missingLength = (responseBuffer.size() - responseStream.str().size()) - contentLength;
+
+    responseStream.clear();
+    responseStream << &responseBuffer;
+    responseBuffer.consume(alreadyReceivedSize);
+    
     // Read the remaining part of the response based on Content-Length
     std::cout << "Reading response body" << std::endl;
     if (contentLength > 0) {
-        while (contentLength > 0) {
-            std::cout << "Reading response body with content length: " << contentLength << std::endl;
+        while (missingLength > 0) {
+            std::cout << "Reading response body with missing length: " << missingLength << std::endl;
             auto bytesReaded = boost::asio::read(socket, responseBuffer, error);
-            contentLength -= bytesReaded;
+            missingLength -= bytesReaded;
             std::cout << "Reading response body with content length done" << std::endl;
             if (error == boost::asio::error::eof)
                 break; // Connection closed cleanly by peer.
