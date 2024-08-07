@@ -19,31 +19,24 @@ BoostHttpOnlySslClient::~BoostHttpOnlySslClient() {
 
 string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqArg>& args) const {
     tcp::resolver resolver(_ioService);
-    tcp::resolver::query query(url.host, "443");
+    tcp::resolver::query query(url.host, "8081"); // Use port 8081 for HTTP, local server
 
-    ssl::context context(ssl::context::tlsv12_client);
-    context.set_default_verify_paths();
+    tcp::socket socket(_ioService);
 
-    ssl::stream<tcp::socket> socket(_ioService, context);
-
-    connect(socket.lowest_layer(), resolver.resolve(query));
+    connect(socket, resolver.resolve(query));
 
     #ifdef TGBOT_DISABLE_NAGLES_ALGORITHM
-    socket.lowest_layer().set_option(tcp::no_delay(true));
+    socket.set_option(tcp::no_delay(true));
     #endif //TGBOT_DISABLE_NAGLES_ALGORITHM
     #ifdef TGBOT_CHANGE_SOCKET_BUFFER_SIZE
     #if _WIN64 || __amd64__ || __x86_64__ || __MINGW64__ || __aarch64__ || __powerpc64__
-    socket.lowest_layer().set_option(socket_base::send_buffer_size(65536));
-    socket.lowest_layer().set_option(socket_base::receive_buffer_size(65536));
+    socket.set_option(socket_base::send_buffer_size(65536));
+    socket.set_option(socket_base::receive_buffer_size(65536));
     #else //for 32-bit
-    socket.lowest_layer().set_option(socket_base::send_buffer_size(32768));
-    socket.lowest_layer().set_option(socket_base::receive_buffer_size(32768));
+    socket.set_option(socket_base::send_buffer_size(32768));
+    socket.set_option(socket_base::receive_buffer_size(32768));
     #endif //Processor architecture
     #endif //TGBOT_CHANGE_SOCKET_BUFFER_SIZE
-    socket.set_verify_mode(ssl::verify_none);
-    socket.set_verify_callback(ssl::rfc2818_verification(url.host));
-
-    socket.handshake(ssl::stream<tcp::socket>::client);
 
     string requestText = _httpParser.generateRequest(url, args, false);
     write(socket, buffer(requestText.c_str(), requestText.length()));
@@ -56,19 +49,14 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     timeStruct.tv_usec = 0;
     FD_ZERO(&fileDescriptorSet);
     
-    // We'll need to get the underlying native socket for this select call, in order
-    // to add a simple timeout on the read:
+    int nativeSocket = static_cast<int>(socket.native_handle());
     
-    int nativeSocket = static_cast<int>(socket.lowest_layer().native_handle());
+    FD_SET(nativeSocket, &fileDescriptorSet);        
+    select(nativeSocket + 1, &fileDescriptorSet, NULL, NULL, &timeStruct);
     
-    FD_SET(nativeSocket,&fileDescriptorSet);        
-    select(nativeSocket+1,&fileDescriptorSet,NULL,NULL,&timeStruct);
-    
-    if(!FD_ISSET(nativeSocket,&fileDescriptorSet)){ // timeout
-        
+    if (!FD_ISSET(nativeSocket, &fileDescriptorSet)) { // timeout
         std::string sMsg("TIMEOUT on read client data. Client IP: ");
-        
-        sMsg.append(socket.next_layer().remote_endpoint().address().to_string());
+        sMsg.append(socket.remote_endpoint().address().to_string());
         _ioService.reset();
         
         throw std::exception();
@@ -94,5 +82,6 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
 
     return _httpParser.extractBody(response);
 }
+
 
 }
