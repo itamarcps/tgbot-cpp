@@ -44,7 +44,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
 
     connect(socket, resolver.resolve(query));
     socket.set_option(tcp::no_delay(true));
-    
+
     #ifdef TGBOT_CHANGE_SOCKET_BUFFER_SIZE
     #if _WIN64 || __amd64__ || __x86_64__ || __MINGW64__ || __aarch64__ || __powerpc64__
     socket.set_option(socket_base::send_buffer_size(65536));
@@ -116,6 +116,10 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
             auto bytesReaded = boost::asio::read(socket, responseBuffer, error);
             contentLength -= bytesReaded;
             std::cout << "Reading response body with content length done" << std::endl;
+            if (error == boost::asio::error::eof)
+                break; // Connection closed cleanly by peer.
+            else if (error)
+                break; // Some other error.
         }
     } else {
         std::cout << "Reading response body with unknown content length" << std::endl;
@@ -124,7 +128,7 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
             if (error == boost::asio::error::eof)
                 break; // Connection closed cleanly by peer.
             else if (error)
-                throw boost::system::system_error(error); // Some other error.
+                break; // Some other error.
         }
     }
 
