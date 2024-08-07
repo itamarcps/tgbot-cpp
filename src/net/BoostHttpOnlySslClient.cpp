@@ -111,10 +111,13 @@ string BoostHttpOnlySslClient::makeRequest(const Url& url, const vector<HttpReqA
     uint64_t alreadyReceivedSize = responseBuffer.size();
     uint64_t missingLength = (responseBuffer.size() - responseStream.str().size()) - contentLength;
 
+    std::cout << "Already received size: " << alreadyReceivedSize << std::endl;
+    std::cout << "Missing length: " << missingLength << std::endl;
+
     responseStream.clear();
     responseStream << &responseBuffer;
     responseBuffer.consume(alreadyReceivedSize);
-    
+
     // Read the remaining part of the response based on Content-Length
     std::cout << "Reading response body" << std::endl;
     if (contentLength > 0) {
